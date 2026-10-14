@@ -1,0 +1,101 @@
+graph TD
+    %% User Layer
+    Farmer["Farmer / FPO Extension Worker"]
+
+    %% Frontend Layer
+    subgraph Frontend["React + Vite Frontend (Port 5173)"]
+        UI["Dashboard UI (Outfit & Noto Sans Devanagari)"]
+        Form["Harvest & Mandi Quotation Form"]
+        MandiComp["Mandi Comparison & Net Realization Cards"]
+        RainCard["Rainfall Spoilage Risk Meter"]
+        Brief["Bilingual Decision Brief (Hindi / English)"]
+        OverrideUI["Human Override & Field Context Modal"]
+        LocalCache[("Browser LocalStorage Cache\n- Offline Resilient Fallback\n- Last Verified Advisory\n- Queued Field Overrides")]
+    end
+
+    %% Backend Gateway Layer
+    subgraph Backend["Express.js API Gateway (Port 5000)"]
+        Router["Express Router (/api/*)"]
+        Validator["Input Validation Middleware"]
+        FastAPIProxy["FastAPI HTTP Proxy Client (5s Timeout)"]
+        PGClient["PostgreSQL pg Client & Connection Pool"]
+        MemFallback[("Resilient In-Memory Fallback Store\n- Active when DB is Unreachable")]
+        ErrHandler["Central Error Handler (Structured JSON)"]
+    end
+
+    %% Analytical Engine Layer
+    subgraph Analytics["FastAPI Analytical Engine (Port 8001)"]
+        FastAPIRouter["FastAPI Endpoints (/analyze, /price-bands)"]
+        PricingEngine["Pricing & Net Realization Calculator\nNet = Gross - Transport (INR/kg)"]
+        PriceBandEngine["Price Band & Quotation Range Preservation"]
+        RainEngine["Rainfall Risk Assessment Heuristics\n(Low, Moderate, High, Stale, Missing)"]
+        BriefEngine["Deterministic Bilingual Brief Generator\n(Hindi & English Templates)"]
+        MLExtension["Planned ML Predictive Module\n(Pluggable Yield/Price Forecaster - Future)"]
+    end
+
+    %% Persistence Layer
+    subgraph Database["PostgreSQL 15 Database (Port 5432)"]
+        CropsTbl[("crops")]
+        MandisTbl[("mandis")]
+        PricesTbl[("mandi_price_observations (Synthetic Demo)")]
+        TransportTbl[("transport_cost_observations (Synthetic Demo)")]
+        WeatherTbl[("weather_forecasts (Synthetic Demo)")]
+        AnalysisTbl[("analysis_records")]
+        RecsTbl[("recommendations")]
+        OverridesTbl[("human_overrides (Audit Trail)")]
+    end
+
+    %% External & Future Integrations
+    subgraph ExternalPlanned["Future / Planned External Integrations (Not Active)"]
+        AgmarknetLive["Live APMC Agmarknet API (Planned)"]
+        IMDLive["Live IMD OpenWeather API (Planned)"]
+        SMSIVR["Kisan Call Centre / SMS-IVR Dispatch (Planned)"]
+    end
+
+    %% Interactions & Data Flow
+    Farmer -->|Enters Crop, Mandi Quotes & Rainfall| UI
+    UI --> Form
+    Form -->|POST /api/analyze| Router
+    
+    %% Offline Fallback Path
+    UI -.->|Network Offline / Fallback| LocalCache
+    LocalCache -.->|Cached Advisory with Stale Badge| UI
+
+    %% Backend to FastAPI
+    Router --> Validator
+    Validator --> FastAPIProxy
+    FastAPIProxy -->|HTTP POST /analyze| FastAPIRouter
+
+    FastAPIRouter --> PricingEngine
+    PricingEngine --> PriceBandEngine
+    FastAPIRouter --> RainEngine
+    PricingEngine --> BriefEngine
+    RainEngine --> BriefEngine
+    BriefEngine --> FastAPIRouter
+
+    %% Analytical Service Response to Express
+    FastAPIRouter -->|JSON Analysis Response| FastAPIProxy
+    FastAPIProxy --> PGClient
+
+    %% Express to PostgreSQL
+    PGClient -->|INSERT analysis & recommendations| AnalysisTbl
+    PGClient -->|INSERT recommendations| RecsTbl
+    PGClient -.->|If DB Disconnected| MemFallback
+
+    %% Express Response to React
+    PGClient --> Router
+    Router -->|JSON Analysis + Metadata| UI
+    UI --> MandiComp
+    UI --> RainCard
+    UI --> Brief
+
+    %% Human Override Flow
+    Farmer -->|Overrides Algorithmic Choice + Mandatory Reason| OverrideUI
+    OverrideUI -->|POST /api/overrides| Router
+    Router --> PGClient
+    PGClient -->|INSERT human_overrides| OverridesTbl
+
+    %% Future Connections
+    AgmarknetLive -.->|Future Feed| PricesTbl
+    IMDLive -.->|Future Feed| WeatherTbl
+    Brief -.->|Future SMS Dispatch| SMSIVR
